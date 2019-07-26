@@ -1,5 +1,6 @@
 ﻿using System;
 using System.CodeDom.Compiler;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Asn1;
@@ -18,6 +19,7 @@ namespace PfxDataPrinter
             byte[] pfxBytes = null;
             string password = null;
             string macPassword = null;
+            SortedDictionary<string, List<string>> keyMatches = new SortedDictionary<string, List<string>>();
 
             if (args.Length > 0)
             {
@@ -130,16 +132,60 @@ namespace PfxDataPrinter
                             writer.WriteLine();
                         }
 
+                        string localScope = $"Safe[{i}]";
+
                         writer.Indent--;
                         writer.WriteLine($"AuthenticatedSafe[{i}]:");
                         writer.Indent++;
 
-                        PrintSafeContents(writer, safeContents, ref password);
+                        ProcessSafeContents(
+                            writer,
+                            safeContents,
+                            localScope,
+                            keyMatches,
+                            ref password);
 
                         writer.Indent -= 2;
                     }
 
                     writer.Indent--;
+
+                    writer.WriteLine();
+
+                    if (keyMatches.Count == 0)
+                    {
+                        writer.WriteLine("No LocalKeyIds were present");
+                    }
+                    else
+                    {
+                        writer.WriteLine("Local Key IDs:");
+                        writer.Indent++;
+                        bool first = true;
+
+                        foreach ((string keyId, List<string> scopes) in keyMatches)
+                        {
+                            if (!first)
+                            {
+                                writer.WriteLine();
+                            }
+
+                            first = false;
+
+                            writer.WriteLine(keyId);
+
+                            scopes.Sort();
+                            writer.Indent++;
+
+                            foreach (string scope in scopes)
+                            {
+                                writer.WriteLine(scope);
+                            }
+
+                            writer.Indent--;
+                        }
+
+                        writer.Indent--;
+                    }
                 }
 
                 return 0;
@@ -155,7 +201,12 @@ namespace PfxDataPrinter
             }
         }
 
-        private static void PrintSafeContents(IndentedTextWriter writer, Pkcs12SafeContents safeContents, ref string password)
+        private static void ProcessSafeContents(
+            IndentedTextWriter writer,
+            Pkcs12SafeContents safeContents,
+            string scopeId,
+            IDictionary<string, List<string>> keyMatches,
+            ref string password)
         {
             writer.WriteLine($"ConfidentialityMode: {safeContents.ConfidentialityMode}");
 
@@ -216,17 +267,29 @@ namespace PfxDataPrinter
                     writer.WriteLine();
                 }
 
+                string localScopeId = $"Bag[{j}]";
+
                 writer.Indent--;
-                writer.WriteLine($"Bag[{j}] ({bag.GetType().Name}): ({bag.GetBagId().Value})");
+                writer.WriteLine($"{localScopeId} ({bag.GetType().Name}): ({bag.GetBagId().Value})");
                 writer.Indent++;
 
-                PrintBagDetails(writer, bag, ref password);
+                ProcessBagDetails(
+                    writer,
+                    bag,
+                    $"{scopeId}/{localScopeId}",
+                    keyMatches,
+                    ref password);
 
                 writer.Indent--;
             }
         }
 
-        private static void PrintBagDetails(IndentedTextWriter writer, Pkcs12SafeBag bag, ref string password)
+        private static void ProcessBagDetails(
+            IndentedTextWriter writer,
+            Pkcs12SafeBag bag,
+            string scopeId,
+            IDictionary<string, List<string>> keyMatches,
+            ref string password)
         {
             if (bag is Pkcs12CertBag certBag)
             {
@@ -322,6 +385,15 @@ namespace PfxDataPrinter
                 writer.WriteLine($"Secret Type: {secretBag.GetSecretType().Value}");
             }
 
+            ProcessAttributes(writer, bag, scopeId, keyMatches);
+        }
+
+        private static void ProcessAttributes(
+            IndentedTextWriter writer,
+            Pkcs12SafeBag bag,
+            string scopeId,
+            IDictionary<string, List<string>> keyMatches)
+        {
             writer.WriteLine("Attributes:");
             writer.Indent++;
             bool firstAttr = true;
@@ -337,7 +409,7 @@ namespace PfxDataPrinter
 
                     firstAttr = false;
 
-                    PrintAttribute(writer, attr);
+                    ProcessAttribute(writer, attr, scopeId, keyMatches);
                 }
             }
 
@@ -347,7 +419,11 @@ namespace PfxDataPrinter
             }
         }
 
-        private static void PrintAttribute(TextWriter writer, AsnEncodedData attr)
+        private static void ProcessAttribute(
+            TextWriter writer,
+            AsnEncodedData attr,
+            string scopeId,
+            IDictionary<string, List<string>> keyMatches)
         {
             string oidValue = attr.Oid.Value;
             bool handled = false;
@@ -356,8 +432,18 @@ namespace PfxDataPrinter
 
             if (attr is Pkcs9LocalKeyId keyId)
             {
-                writer.WriteLine($"Value: {keyId.KeyId.ToHex()}");
+                string localKeyId = keyId.KeyId.ToHex();
+                writer.WriteLine($"Value: {localKeyId}");
                 handled = true;
+
+                if (!keyMatches.TryGetValue(localKeyId, out List<string> scopes))
+                {
+                    keyMatches[localKeyId] = new List<string> { scopeId };
+                }
+                else
+                {
+                    scopes.Add(scopeId);
+                }
             }
             else if (oidValue == "1.3.6.1.4.1.311.17.2")
             {
