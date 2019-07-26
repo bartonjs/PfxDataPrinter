@@ -384,6 +384,23 @@ namespace PfxDataPrinter
             {
                 writer.WriteLine($"Secret Type: {secretBag.GetSecretType().Value}");
             }
+            else if (bag is Pkcs12SafeContentsBag safeContentsBag)
+            {
+                ProcessAttributes(writer, bag, scopeId, keyMatches);
+
+                writer.WriteLine("Nested Contents:");
+                writer.Indent++;
+                
+                ProcessSafeContents(
+                    writer,
+                    safeContentsBag.SafeContents,
+                    scopeId,
+                    keyMatches,
+                    ref password);
+
+                writer.Indent--;
+                return;
+            }
 
             ProcessAttributes(writer, bag, scopeId, keyMatches);
         }
