@@ -71,42 +71,47 @@ namespace PfxDataPrinter
                     writer.WriteLine($"{consumed}/{pfxBytes.Length} bytes read as a PFX.");
                     writer.WriteLine($"PFX integrity mode: {info.IntegrityMode}");
 
-                    if (info.VerifyMac(macPassword))
+                    if (info.IntegrityMode != Pkcs12IntegrityMode.None)
                     {
-                        writer.WriteLine("MAC verified with {0} password.", macPassword == null ? "default" : "provided");
-                    }
-                    else if (macPassword != null)
-                    {
-                        WriteLineWithColor(
-                            ConsoleColor.Yellow,
-                            writer,
-                            "MAC does not verify with provided password.");
-                        return 3;
-                    }
-                    else
-                    {
-                        writer.Write("Enter {0}password: ", args.Length > 1 ? "MAC " : "");
-                        writer.Flush();
-                        macPassword = Console.In.ReadLine();
-
                         if (info.VerifyMac(macPassword))
                         {
-                            writer.WriteLine("MAC verified with provided password.");
-
-                            // No password was given
-                            if (args.Length == 1)
-                            {
-                                password = macPassword;
-                            }
+                            writer.WriteLine(
+                                "MAC verified with {0} password.",
+                                macPassword == null ? "default" : "provided");
                         }
-                        else
+                        else if (macPassword != null)
                         {
                             WriteLineWithColor(
                                 ConsoleColor.Yellow,
                                 writer,
                                 "MAC does not verify with provided password.");
-
                             return 3;
+                        }
+                        else
+                        {
+                            writer.Write("Enter {0}password: ", args.Length > 1 ? "MAC " : "");
+                            writer.Flush();
+                            macPassword = Console.In.ReadLine();
+
+                            if (info.VerifyMac(macPassword))
+                            {
+                                writer.WriteLine("MAC verified with provided password.");
+
+                                // No password was given
+                                if (args.Length == 1)
+                                {
+                                    password = macPassword;
+                                }
+                            }
+                            else
+                            {
+                                WriteLineWithColor(
+                                    ConsoleColor.Yellow,
+                                    writer,
+                                    "MAC does not verify with provided password.");
+
+                                return 3;
+                            }
                         }
                     }
 
