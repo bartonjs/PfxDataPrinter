@@ -2,6 +2,7 @@
 using System.CodeDom.Compiler;
 using System.IO;
 using System.Security.Cryptography;
+using System.Security.Cryptography.Asn1;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -348,13 +349,39 @@ namespace PfxDataPrinter
 
         private static void PrintAttribute(TextWriter writer, AsnEncodedData attr)
         {
-            writer.WriteLine($"Type: {attr.GetType().Name} ({attr.Oid.Value})");
+            string oidValue = attr.Oid.Value;
+            bool handled = false;
+
+            writer.WriteLine($"Type: {attr.GetType().Name} ({oidValue})");
 
             if (attr is Pkcs9LocalKeyId keyId)
             {
                 writer.WriteLine($"Value: {keyId.KeyId.ToHex()}");
+                handled = true;
             }
-            else
+            else if (oidValue == "1.3.6.1.4.1.311.17.2")
+            {
+                writer.WriteLine("Value: Machine Keyset Indicated");
+                handled = true;
+            }
+            else if (oidValue == "1.2.840.113549.1.9.20")
+            {
+                if (TryReadBmpString(attr.RawData, out string friendlyName))
+                {
+                    writer.WriteLine($"Friendly Name: {friendlyName}");
+                    handled = true;
+                }
+            }
+            else if (oidValue == "1.3.6.1.4.1.311.17.1")
+            {
+                if (TryReadBmpString(attr.RawData, out string keyProvider))
+                {
+                    writer.WriteLine($"Key Provider: {keyProvider}");
+                    handled = true;
+                }
+            }
+
+            if (!handled)
             {
                 byte[] rawData = attr.RawData;
                 writer.WriteLine($"Value Length: {rawData.Length}");
@@ -377,6 +404,22 @@ namespace PfxDataPrinter
             writer.WriteLine(message);
             writer.Flush();
             Console.ResetColor();
+        }
+
+        private static bool TryReadBmpString(ReadOnlyMemory<byte> bmpString, out string read)
+        {
+            try
+            {
+                AsnReader reader = new AsnReader(bmpString, AsnEncodingRules.BER);
+                read = reader.ReadCharacterString(UniversalTagNumber.BMPString);
+                return true;
+            }
+            catch (CryptographicException)
+            {
+            }
+
+            read = null;
+            return false;
         }
 
         private static string ToHex(this byte[] bytes)

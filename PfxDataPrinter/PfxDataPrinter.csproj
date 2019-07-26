@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -6,6 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.Asn1.Experimental" Version="0.1.1-e190722-1" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="4.6.0-preview7.19362.9" />
   </ItemGroup>
 
