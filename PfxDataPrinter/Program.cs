@@ -68,7 +68,7 @@ namespace PfxDataPrinter
 
                     Pkcs12Info info = Pkcs12Info.Decode(pfxBytes, out int consumed, skipCopy: true);
 
-                    writer.WriteLine($" {consumed}/{pfxBytes.Length} bytes read as a PFX.");
+                    writer.WriteLine($"{consumed}/{pfxBytes.Length} bytes read as a PFX.");
                     writer.WriteLine($"PFX integrity mode: {info.IntegrityMode}");
 
                     if (info.VerifyMac(macPassword))
@@ -111,7 +111,6 @@ namespace PfxDataPrinter
                     }
 
                     writer.WriteLine();
-
                     writer.Indent++;
 
                     int i = -1;
@@ -128,200 +127,8 @@ namespace PfxDataPrinter
                         writer.Indent--;
                         writer.WriteLine($"AuthenticatedSafe[{i}]:");
                         writer.Indent++;
-                        writer.WriteLine($"ConfidentialityMode: {safeContents.ConfidentialityMode}");
 
-                        if (safeContents.ConfidentialityMode == Pkcs12ConfidentialityMode.Password)
-                        {
-                            if (password == null)
-                            {
-                                try
-                                {
-                                    safeContents.Decrypt(password);
-                                }
-                                catch (CryptographicException)
-                                {
-                                    writer.Write("Enter password: ");
-                                    writer.Flush();
-                                    password = Console.In.ReadLine();
-                                }
-                            }
-
-                            try
-                            {
-                                safeContents.Decrypt(password);
-                            }
-                            catch (CryptographicException)
-                            {
-                                WriteLineWithColor(
-                                    ConsoleColor.Red,
-                                    writer,
-                                    "Password failed to decrypt contents");
-
-                                continue;
-                            }
-                        }
-                        else if (safeContents.ConfidentialityMode != Pkcs12ConfidentialityMode.None)
-                        {
-                            WriteLineWithColor(
-                                ConsoleColor.Yellow,
-                                writer,
-                                "Cannot process contents, skipping.");
-
-                            continue;
-                        }
-
-                        writer.WriteLine("Bags:");
-                        writer.Indent += 2;
-
-                        int j = -1;
-
-                        foreach (Pkcs12SafeBag bag in safeContents.GetBags())
-                        {
-                            j++;
-
-                            if (j > 0)
-                            {
-                                writer.WriteLine();
-                            }
-
-                            writer.Indent--;
-                            writer.WriteLine($"Bag[{j}] ({bag.GetType().Name}): ({bag.GetBagId().Value})");
-                            writer.Indent++;
-
-                            if (bag is Pkcs12CertBag certBag)
-                            {
-                                writer.WriteLine($"IsX509Certificate: {certBag.IsX509Certificate}");
-
-                                if (certBag.IsX509Certificate)
-                                {
-                                    try
-                                    {
-                                        using (X509Certificate2 cert = certBag.GetCertificate())
-                                        {
-                                            writer.WriteLine($"Subject: {cert.Subject}");
-                                            writer.WriteLine($" Issuer: {cert.Issuer}");
-                                        }
-                                    }
-                                    catch (CryptographicException)
-                                    {
-                                        WriteLineWithColor(
-                                            ConsoleColor.Yellow,
-                                            writer,
-                                            "Certificate did not parse.");
-                                    }
-                                }
-                                else
-                                {
-                                    writer.WriteLine($"Certificate Type: {certBag.GetCertificateType().Value}");
-                                }
-                            }
-                            else if (bag is Pkcs12KeyBag keyBag)
-                            {
-                                try
-                                {
-                                    Pkcs8PrivateKeyInfo keyInfo = Pkcs8PrivateKeyInfo.Decode(
-                                        keyBag.Pkcs8PrivateKey,
-                                        out int keyRead,
-                                        skipCopy: true);
-
-                                    writer.WriteLine($"Private Key used {keyRead}/{keyBag.Pkcs8PrivateKey.Length} bytes.");
-
-                                    writer.WriteLine(
-                                        $"Private Key Algorithm: {keyInfo.AlgorithmId.Value} ({keyInfo.AlgorithmId.FriendlyName})");
-                                }
-                                catch (CryptographicException)
-                                {
-                                    WriteLineWithColor(
-                                        ConsoleColor.Yellow,
-                                        writer,
-                                        "Private Key was not a valid PKCS#8 PrivateKeyInfo");
-                                }
-                            }
-                            else if (bag is Pkcs12ShroudedKeyBag shroudedBag)
-                            {
-                                if (password == null)
-                                {
-                                    try
-                                    {
-                                        Pkcs8PrivateKeyInfo.DecryptAndDecode(
-                                            password,
-                                            shroudedBag.EncryptedPkcs8PrivateKey,
-                                            out _);
-                                    }
-                                    catch (CryptographicException)
-                                    {
-                                        writer.Write("Enter password: ");
-                                        writer.Flush();
-                                        password = Console.In.ReadLine();
-                                    }
-                                }
-
-                                try
-                                {
-                                    Pkcs8PrivateKeyInfo keyInfo = Pkcs8PrivateKeyInfo.DecryptAndDecode(
-                                        password,
-                                        shroudedBag.EncryptedPkcs8PrivateKey,
-                                        out int privateKeyRead);
-
-                                    writer.WriteLine(
-                                        $"Private Key used {privateKeyRead}/{shroudedBag.EncryptedPkcs8PrivateKey.Length} bytes.");
-
-                                    writer.WriteLine(
-                                        $"Private Key Algorithm: {keyInfo.AlgorithmId.Value} ({keyInfo.AlgorithmId.FriendlyName})");
-                                }
-                                catch (CryptographicException)
-                                {
-                                    WriteLineWithColor(
-                                        ConsoleColor.Yellow,
-                                        writer,
-                                        "Private Key was not a valid PKCS#8 EncryptedPrivateKeyInfo or it did not decrypt.");
-                                }
-                            }
-                            else if (bag is Pkcs12SecretBag secretBag)
-                            {
-                                writer.WriteLine($"Secret Type: {secretBag.GetSecretType().Value}");
-                            }
-
-                            writer.WriteLine("Attributes:");
-                            writer.Indent++;
-                            bool firstAttr = true;
-
-                            foreach (CryptographicAttributeObject attrGroup in bag.Attributes)
-                            {
-                                if (!firstAttr)
-                                {
-                                    writer.WriteLine();
-                                }
-
-                                firstAttr = true;
-
-                                foreach (AsnEncodedData attr in attrGroup.Values)
-                                {
-                                    writer.WriteLine($"Type: {attr.GetType().Name} ({attr.Oid.Value})");
-
-                                    if (attr is Pkcs9LocalKeyId keyId)
-                                    {
-                                        writer.WriteLine($"Value: {keyId.KeyId.ToHex()}");
-                                    }
-                                    else
-                                    {
-                                        byte[] rawData = attr.RawData;
-                                        writer.WriteLine($"Value Length: {rawData.Length}");
-
-                                        if (rawData.Length > 12)
-                                        {
-                                            writer.WriteLine($"Value: {rawData.AsSpan(0, 10).ToHex()}...");
-                                        }
-                                        else
-                                        {
-                                            writer.WriteLine($"Value: {rawData.ToHex()}");
-                                        }
-                                    }
-                                }
-                            }
-
-                            writer.Indent--;
-                        }
+                        PrintSafeContents(writer, safeContents, ref password);
 
                         writer.Indent -= 2;
                     }
@@ -339,6 +146,222 @@ namespace PfxDataPrinter
                 Console.WriteLine(e);
                 Console.ResetColor();
                 return 2;
+            }
+        }
+
+        private static void PrintSafeContents(IndentedTextWriter writer, Pkcs12SafeContents safeContents, ref string password)
+        {
+            writer.WriteLine($"ConfidentialityMode: {safeContents.ConfidentialityMode}");
+
+            if (safeContents.ConfidentialityMode == Pkcs12ConfidentialityMode.Password)
+            {
+                if (password == null)
+                {
+                    try
+                    {
+                        safeContents.Decrypt(password);
+                    }
+                    catch (CryptographicException)
+                    {
+                        writer.Write("Enter password: ");
+                        writer.Flush();
+                        password = Console.In.ReadLine();
+                    }
+                }
+
+                if (safeContents.ConfidentialityMode == Pkcs12ConfidentialityMode.Password)
+                {
+                    try
+                    {
+                        safeContents.Decrypt(password);
+                    }
+                    catch (CryptographicException)
+                    {
+                        WriteLineWithColor(
+                            ConsoleColor.Red,
+                            writer,
+                            "Password failed to decrypt contents");
+
+                        return;
+                    }
+                }
+            }
+            else if (safeContents.ConfidentialityMode != Pkcs12ConfidentialityMode.None)
+            {
+                WriteLineWithColor(
+                    ConsoleColor.Yellow,
+                    writer,
+                    "Cannot process contents, skipping.");
+
+                return;
+            }
+
+            writer.WriteLine("Bags:");
+            writer.Indent += 2;
+
+            int j = -1;
+
+            foreach (Pkcs12SafeBag bag in safeContents.GetBags())
+            {
+                j++;
+
+                if (j > 0)
+                {
+                    writer.WriteLine();
+                }
+
+                writer.Indent--;
+                writer.WriteLine($"Bag[{j}] ({bag.GetType().Name}): ({bag.GetBagId().Value})");
+                writer.Indent++;
+
+                PrintBagDetails(writer, bag, ref password);
+
+                writer.Indent--;
+            }
+        }
+
+        private static void PrintBagDetails(IndentedTextWriter writer, Pkcs12SafeBag bag, ref string password)
+        {
+            if (bag is Pkcs12CertBag certBag)
+            {
+                writer.WriteLine($"IsX509Certificate: {certBag.IsX509Certificate}");
+
+                if (certBag.IsX509Certificate)
+                {
+                    try
+                    {
+                        using (X509Certificate2 cert = certBag.GetCertificate())
+                        {
+                            writer.WriteLine($"Subject: {cert.Subject}");
+                            writer.WriteLine($" Issuer: {cert.Issuer}");
+                        }
+                    }
+                    catch (CryptographicException)
+                    {
+                        WriteLineWithColor(
+                            ConsoleColor.Yellow,
+                            writer,
+                            "Certificate did not parse.");
+                    }
+                }
+                else
+                {
+                    writer.WriteLine($"Certificate Type: {certBag.GetCertificateType().Value}");
+                }
+            }
+            else if (bag is Pkcs12KeyBag keyBag)
+            {
+                try
+                {
+                    Pkcs8PrivateKeyInfo keyInfo = Pkcs8PrivateKeyInfo.Decode(
+                        keyBag.Pkcs8PrivateKey,
+                        out int keyRead,
+                        skipCopy: true);
+
+                    writer.WriteLine($"Private Key used {keyRead}/{keyBag.Pkcs8PrivateKey.Length} bytes.");
+
+                    writer.WriteLine(
+                        $"Private Key Algorithm: {keyInfo.AlgorithmId.Value} ({keyInfo.AlgorithmId.FriendlyName})");
+                }
+                catch (CryptographicException)
+                {
+                    WriteLineWithColor(
+                        ConsoleColor.Yellow,
+                        writer,
+                        "Private Key was not a valid PKCS#8 PrivateKeyInfo");
+                }
+            }
+            else if (bag is Pkcs12ShroudedKeyBag shroudedBag)
+            {
+                if (password == null)
+                {
+                    try
+                    {
+                        Pkcs8PrivateKeyInfo.DecryptAndDecode(
+                            password,
+                            shroudedBag.EncryptedPkcs8PrivateKey,
+                            out _);
+                    }
+                    catch (CryptographicException)
+                    {
+                        writer.Write("Enter password: ");
+                        writer.Flush();
+                        password = Console.In.ReadLine();
+                    }
+                }
+
+                try
+                {
+                    Pkcs8PrivateKeyInfo keyInfo = Pkcs8PrivateKeyInfo.DecryptAndDecode(
+                        password,
+                        shroudedBag.EncryptedPkcs8PrivateKey,
+                        out int privateKeyRead);
+
+                    writer.WriteLine(
+                        $"Private Key used {privateKeyRead}/{shroudedBag.EncryptedPkcs8PrivateKey.Length} bytes.");
+
+                    writer.WriteLine(
+                        $"Private Key Algorithm: {keyInfo.AlgorithmId.Value} ({keyInfo.AlgorithmId.FriendlyName})");
+                }
+                catch (CryptographicException)
+                {
+                    WriteLineWithColor(
+                        ConsoleColor.Yellow,
+                        writer,
+                        "Private Key was not a valid PKCS#8 EncryptedPrivateKeyInfo or it did not decrypt.");
+                }
+            }
+            else if (bag is Pkcs12SecretBag secretBag)
+            {
+                writer.WriteLine($"Secret Type: {secretBag.GetSecretType().Value}");
+            }
+
+            writer.WriteLine("Attributes:");
+            writer.Indent++;
+            bool firstAttr = true;
+
+            foreach (CryptographicAttributeObject attrGroup in bag.Attributes)
+            {
+                foreach (AsnEncodedData attr in attrGroup.Values)
+                {
+                    if (!firstAttr)
+                    {
+                        writer.WriteLine();
+                    }
+
+                    firstAttr = false;
+
+                    PrintAttribute(writer, attr);
+                }
+            }
+
+            if (firstAttr)
+            {
+                writer.WriteLine("No attributes present.");
+            }
+        }
+
+        private static void PrintAttribute(TextWriter writer, AsnEncodedData attr)
+        {
+            writer.WriteLine($"Type: {attr.GetType().Name} ({attr.Oid.Value})");
+
+            if (attr is Pkcs9LocalKeyId keyId)
+            {
+                writer.WriteLine($"Value: {keyId.KeyId.ToHex()}");
+            }
+            else
+            {
+                byte[] rawData = attr.RawData;
+                writer.WriteLine($"Value Length: {rawData.Length}");
+
+                if (rawData.Length > 12)
+                {
+                    writer.WriteLine($"Value: {rawData.AsSpan(0, 10).ToHex()}...");
+                }
+                else
+                {
+                    writer.WriteLine($"Value: {rawData.ToHex()}");
+                }
             }
         }
 
